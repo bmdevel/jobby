@@ -35,7 +35,7 @@ class Jobby
         $this->setConfig($this->getDefaultConfig());
         $this->setConfig($config);
 
-        $this->script = __DIR__ . DIRECTORY_SEPARATOR . 'BackgroundJob.php';
+        $this->script = __DIR__ . DIRECTORY_SEPARATOR . 'run_background_job.php';
     }
 
     /**
@@ -181,7 +181,7 @@ class Jobby
         }
 
         if (strpos(__DIR__, 'phar://') === 0) {
-            return sprintf(' -r \'define("JOBBY_RUN_JOB",1);include("%s");\' "%s" "%s"', $this->script, $job, http_build_query($config));
+            return sprintf(' -r \'include("%s");\' "%s" "%s"', $this->script, $job, http_build_query($config));
         }
         return sprintf('"%s" "%s" "%s"', $this->script, $job, http_build_query($config));
     }
