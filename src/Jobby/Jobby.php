@@ -38,7 +38,7 @@ class Jobby
         $this->setConfig($this->getDefaultConfig());
         $this->setConfig($config);
 
-        $this->script = __DIR__ . DIRECTORY_SEPARATOR . 'BackgroundJob.php';
+        $this->script = __DIR__ . DIRECTORY_SEPARATOR . 'run_background_job.php';
     }
 
     /**

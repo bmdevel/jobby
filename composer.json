@@ -1,5 +1,6 @@
 {
-  "name": "hellogerard/jobby",
+  "name": "bmdevel/jobby",
+  "version": "2.0.15",
   "homepage": "https://github.com/hellogerard/jobby",
   "license": "MIT",
   "description": "Manage all your cron jobs without modifying crontab. Handles locking, logging, error emails, and more.",
