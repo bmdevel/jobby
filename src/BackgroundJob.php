@@ -3,10 +3,11 @@
 namespace Jobby;
 
 use Cron\CronExpression;
-use SuperClosure\SerializableClosure;
 
 class BackgroundJob
 {
+    use SerializerTrait;
+
     /**
      * @var Helper
      */
@@ -83,7 +84,7 @@ class BackgroundJob
             $this->helper->acquireLock($lockFile);
             $lockAcquired = true;
 
-            if ($this->isFunction()) {
+            if (isset($this->config['closure'])) {
                 $this->runFunction();
             } else {
                 $this->runFile();
@@ -104,6 +105,14 @@ class BackgroundJob
                 unlink($logfile);
             }
         }
+    }
+
+    /**
+     * @return array
+     */
+    public function getConfig()
+    {
+        return $this->config;
     }
 
     /**
@@ -197,16 +206,6 @@ class BackgroundJob
             }
         }
 
-        $schedule = \DateTime::createFromFormat('Y-m-d H:i:s', $this->config['schedule']);
-        if ($schedule !== false) {
-            return $schedule->format('Y-m-d H:i') == (date('Y-m-d H:i'));
-        }
-
-        $cron = CronExpression::factory($this->config['schedule']);
-        if (!$cron->isDue()) {
-            return false;
-        }
-
         $host = $this->helper->getHost();
         if (strcasecmp($this->config['runOnHost'], $host) != 0) {
             return false;
@@ -227,27 +226,16 @@ class BackgroundJob
         }
     }
 
-    /**
-     * @return bool
-     */
-    protected function isFunction()
-    {
-        $cmd = @unserialize($this->config['command']);
-
-        if ($cmd === false) {
-            return false;
-        }
-
-        return is_object($cmd) && $cmd instanceof SerializableClosure;
-    }
-
     protected function runFunction()
     {
-        /** @var SerializableClosure $command */
-        $command = unserialize($this->config['command']);
+        $command = $this->getSerializer()->unserialize($this->config['closure']);
 
         ob_start();
-        $retval = $command();
+        try {
+            $retval = $command();
+        } catch (\Throwable $e) {
+            echo "Error! " . $e->getMessage() . "\n";
+        }
         $content = ob_get_contents();
         if ($logfile = $this->getLogfile()) {
             file_put_contents($this->getLogfile(), $content, FILE_APPEND);
@@ -276,7 +264,7 @@ class BackgroundJob
 
         // Start execution. Run in foreground (will block).
         $command = $this->config['command'];
-        $logfile = $this->getLogfile() ?: '/dev/null';
+        $logfile = $this->getLogfile() ?: $this->helper->getSystemNullDevice();
         exec("$useSudo $command 1>> \"$logfile\" 2>&1", $dummy, $retval);
 
         if ($retval !== 0) {

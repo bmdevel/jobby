@@ -2,11 +2,14 @@
 
 namespace Jobby;
 
+use Closure;
 use SuperClosure\SerializableClosure;
 use Symfony\Component\Process\PhpExecutableFinder;
 
 class Jobby
 {
+    use SerializerTrait;
+
     /**
      * @var array
      */
@@ -35,7 +38,7 @@ class Jobby
         $this->setConfig($this->getDefaultConfig());
         $this->setConfig($config);
 
-        $this->script = __DIR__ . DIRECTORY_SEPARATOR . 'run_background_job.php';
+        $this->script = realpath(__DIR__ . '/../bin/run-job');
     }
 
     /**
@@ -56,6 +59,7 @@ class Jobby
     public function getDefaultConfig()
     {
         return [
+            'jobClass'       => 'Jobby\BackgroundJob',
             'recipients'     => null,
             'mailer'         => 'sendmail',
             'maxRuntime'     => null,
@@ -94,6 +98,14 @@ class Jobby
     }
 
     /**
+     * @return array
+     */
+    public function getJobs()
+    {
+        return $this->jobs;
+    }
+
+    /**
      * Add a job.
      *
      * @param string $job
@@ -103,14 +115,30 @@ class Jobby
      */
     public function add($job, array $config)
     {
-        foreach (['command', 'schedule'] as $field) {
-            if (empty($config[$field])) {
-                throw new Exception("'$field' is required for '$job' job");
+        if (empty($config['schedule'])) {
+            throw new Exception("'schedule' is required for '$job' job");
+        }
+
+        if (!(isset($config['command']) xor isset($config['closure']))) {
+            throw new Exception("Either 'command' or 'closure' is required for '$job' job");
+        }
+
+        if (isset($config['command']) &&
+            (
+                $config['command'] instanceof Closure ||
+                $config['command'] instanceof SerializableClosure
+            )
+        ) {
+            $config['closure'] = $config['command'];
+            unset($config['command']);
+
+            if ($config['closure'] instanceof SerializableClosure) {
+                $config['closure'] = $config['closure']->getClosure();
             }
         }
 
         $config = array_merge($this->config, $config);
-        $this->jobs[$job] = $config;
+        $this->jobs[] = [$job, $config];
     }
 
     /**
@@ -124,7 +152,12 @@ class Jobby
             throw new Exception('posix extension is required');
         }
 
-        foreach ($this->jobs as $job => $config) {
+        $scheduleChecker = new ScheduleChecker();
+        foreach ($this->jobs as $jobConfig) {
+            list($job, $config) = $jobConfig;
+            if (!$scheduleChecker->isDue($config['schedule'])) {
+                continue;
+            }
             if ($isUnix) {
                 $this->runUnix($job, $config);
             } else {
@@ -155,9 +188,10 @@ class Jobby
     {
         // Run in background (non-blocking). From
         // http://us3.php.net/manual/en/function.exec.php#43834
+        $binary = $this->getPhpBinary();
 
         $command = $this->getExecutableCommand($job, $config);
-        pclose(popen("start \"blah\" /B \"php.exe\" $command", "r"));
+        pclose(popen("start \"blah\" /B \"$binary\" $command", "r"));
     }
     // @codeCoverageIgnoreEnd
 
@@ -169,20 +203,15 @@ class Jobby
      */
     protected function getExecutableCommand($job, array $config)
     {
-        if ($config['command'] instanceof SerializableClosure) {
-            $config['command'] = serialize($config['command']);
-
-        } else if ($config['command'] instanceof \Closure) {
-            // Convert closures to its source code as a string so that we
-            // can send it on the command line.
-            $config['command'] = $this->getHelper()
-                ->closureToString($config['command'])
-            ;
+        if (isset($config['closure'])) {
+            $config['closure'] = $this->getSerializer()->serialize($config['closure']);
         }
 
         if (strpos(__DIR__, 'phar://') === 0) {
-            return sprintf(' -r \'include("%s");\' "%s" "%s"', $this->script, $job, http_build_query($config));
+            $script = __DIR__ . DIRECTORY_SEPARATOR . 'BackgroundJob.php';
+            return sprintf(' -r \'define("JOBBY_RUN_JOB",1);include("%s");\' "%s" "%s"', $script, $job, http_build_query($config));
         }
+
         return sprintf('"%s" "%s" "%s"', $this->script, $job, http_build_query($config));
     }
 

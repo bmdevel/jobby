@@ -4,6 +4,7 @@ namespace Jobby\Tests;
 
 use Jobby\BackgroundJob;
 use Jobby\Helper;
+use Jobby\SerializerTrait;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -11,12 +12,19 @@ use Symfony\Component\Filesystem\Filesystem;
  */
 class BackgroundJobTest extends \PHPUnit_Framework_TestCase
 {
+    use SerializerTrait;
+
     const JOB_NAME = 'name';
 
     /**
      * @var string
      */
     private $logFile;
+
+    /**
+     * @var Helper
+     */
+    private $helper;
 
     /**
      * {@inheritdoc}
@@ -27,6 +35,8 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         if (file_exists($this->logFile)) {
             unlink($this->logFile);
         }
+
+        $this->helper = new Helper();
     }
 
     /**
@@ -51,16 +61,23 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
 
             return true;
         };
-        $job = ['command' => $echo];
+        $job = ['closure' => $echo];
 
         return [
             'diabled, not run'       => [$job + ['enabled' => false], ''],
-            'cron schedule, not run' => [$job + ['schedule' => '0 0 1 1 *'], ''],
-            'date time, not run'     => [$job + ['schedule' => date('Y-m-d H:i:s', strtotime('tomorrow'))], ''],
-            'date time, run'         => [$job + ['schedule' => date('Y-m-d H:i:s')], 'test'],
+            'normal job, run'         => [$job, 'test'],
             'wrong host, not run'    => [$job + ['runOnHost' => 'something that does not match'], ''],
-            'current user, run,'     => [['command' => $uid], getmyuid()],
+            'current user, run,'     => [['closure' => $uid], getmyuid()],
         ];
+    }
+
+    /**
+     * @covers ::getConfig
+     */
+    public function testGetConfig()
+    {
+        $job = new BackgroundJob('test job',[]);
+        $this->assertInternalType('array',$job->getConfig());
     }
 
     /**
@@ -86,11 +103,19 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         $this->runJob(['command' => 'invalid-command']);
 
         $this->assertContains('invalid-command', $this->getLogContent());
-        $this->assertContains('not found', $this->getLogContent());
-        $this->assertContains(
-            "ERROR: Job exited with status '127'",
-            $this->getLogContent()
-        );
+
+        if ($this->helper->getPlatform() === Helper::UNIX) {
+            $this->assertContains('not found', $this->getLogContent());
+            $this->assertContains(
+                "ERROR: Job exited with status '127'",
+                $this->getLogContent()
+            );
+        } else {
+            $this->assertContains(
+                'not recognized as an internal or external command',
+                $this->getLogContent()
+            );
+        }
     }
 
     /**
@@ -100,7 +125,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     {
         $this->runJob(
             [
-                'command' => function () {
+                'closure' => function () {
                     return false;
                 },
             ]
@@ -120,7 +145,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         ob_start();
         $this->runJob(
             [
-                'command' => function () {
+                'closure' => function () {
                     echo 'foo bar';
                 },
                 'output'  => null,
@@ -140,7 +165,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         $logfile = dirname($this->logFile) . '/foo/bar.log';
         $this->runJob(
             [
-                'command' => function () {
+                'closure' => function () {
                     echo 'foo bar';
                 },
                 'output'  => $logfile,
@@ -169,7 +194,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
 
         $this->runJob(
             [
-                'command'    => function () {
+                'closure'    => function () {
                     return false;
                 },
                 'recipients' => '',
@@ -190,7 +215,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
 
         $this->runJob(
             [
-                'command'    => function () {
+                'closure'    => function () {
                     return false;
                 },
                 'recipients' => 'test@example.com',
@@ -204,6 +229,10 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      */
     public function testCheckMaxRuntime()
     {
+        if ($this->helper->getPlatform() !== Helper::UNIX) {
+            $this->markTestSkipped("'maxRuntime' is not supported on Windows");
+        }
+
         $helper = $this->getMock('Jobby\Helper', ['getLockLifetime']);
         $helper->expects($this->once())
             ->method('getLockLifetime')
@@ -226,6 +255,10 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      */
     public function testCheckMaxRuntimeShouldFailIsExceeded()
     {
+        if ($this->helper->getPlatform() !== Helper::UNIX) {
+            $this->markTestSkipped("'maxRuntime' is not supported on Windows");
+        }
+
         $helper = $this->getMock('Jobby\Helper', ['getLockLifetime']);
         $helper->expects($this->once())
             ->method('getLockLifetime')
@@ -267,7 +300,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         $this->runJob(
             [
                 'haltDir' => $dir,
-                'command' => function () {
+                'closure' => function () {
                     echo 'test';
 
                     return true;
@@ -312,8 +345,8 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     {
         $helper = new Helper();
 
-        if ($config['command'] instanceof \Closure) {
-            $config['command'] = $helper->closureToString($config['command']);
+        if (isset($config['closure'])) {
+            $config['closure'] = $this->getSerializer()->serialize($config['closure']);
         }
 
         return array_merge(
