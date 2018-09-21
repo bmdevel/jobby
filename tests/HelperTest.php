@@ -26,6 +26,11 @@ class HelperTest extends \PHPUnit_Framework_TestCase
     private $lockFile;
 
     /**
+     * @var string
+     */
+    private $copyOfLockFile;
+
+    /**
      * {@inheritdoc}
      */
     protected function setUp()
@@ -33,6 +38,7 @@ class HelperTest extends \PHPUnit_Framework_TestCase
         $this->helper = new Helper();
         $this->tmpDir = $this->helper->getTempDir();
         $this->lockFile = $this->tmpDir . '/test.lock';
+        $this->copyOfLockFile = $this->tmpDir . "/test.lock.copy";
     }
 
     /**
@@ -71,26 +77,6 @@ class HelperTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @covers ::closureToString
-     */
-    public function testClosureToString()
-    {
-        $closure = function ($args) {
-            return $args . 'bar';
-        };
-
-        $serialized = $this->helper->closureToString($closure);
-
-        /** @var \Closure $actual */
-        $actual = @unserialize($serialized);
-        $actual = $actual('foo');
-
-        $expected = $closure('foo');
-
-        $this->assertEquals($expected, $actual);
-    }
-
-    /**
      * @covers ::getPlatform
      */
     public function testGetPlatform()
@@ -126,7 +112,17 @@ class HelperTest extends \PHPUnit_Framework_TestCase
     public function testLockFileShouldContainCurrentPid()
     {
         $this->helper->acquireLock($this->lockFile);
-        $this->assertEquals(getmypid(), file_get_contents($this->lockFile));
+
+        //on Windows, file locking is mandatory not advisory, so you can't do file_get_contents on a locked file
+        //therefore, we need to make a copy of the lock file in order to read its contents
+        if ($this->helper->getPlatform() === Helper::WINDOWS) {
+            copy($this->lockFile, $this->copyOfLockFile);
+            $lockFile = $this->copyOfLockFile;
+        } else {
+            $lockFile = $this->lockFile;
+        }
+
+        $this->assertEquals(getmypid(), file_get_contents($lockFile));
 
         $this->helper->releaseLock($this->lockFile);
         $this->assertEmpty(file_get_contents($this->lockFile));
@@ -156,6 +152,10 @@ class HelperTest extends \PHPUnit_Framework_TestCase
      */
     public function testLockLifetimeShouldBeZeroIfItContainsAInvalidPid()
     {
+        if ($this->helper->getPlatform() === Helper::WINDOWS) {
+            $this->markTestSkipped("Test relies on posix_ functions");
+        }
+
         file_put_contents($this->lockFile, 'invalid-pid');
         $this->assertEquals(0, $this->helper->getLockLifetime($this->lockFile));
     }
@@ -165,6 +165,10 @@ class HelperTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetLocklifetime()
     {
+        if ($this->helper->getPlatform() === Helper::WINDOWS) {
+            $this->markTestSkipped("Test relies on posix_ functions");
+        }
+
         $this->helper->acquireLock($this->lockFile);
 
         $this->assertEquals(0, $this->helper->getLockLifetime($this->lockFile));
@@ -291,6 +295,36 @@ class HelperTest extends \PHPUnit_Framework_TestCase
      */
     private function getSwiftMailerMock()
     {
-        return $this->getMock('Swift_Mailer', [], [\Swift_NullTransport::newInstance()]);
+        $nullTransport = new \Swift_NullTransport();
+
+        return $this->getMock('Swift_Mailer', [], [$nullTransport]);
+    }
+
+    /**
+     * @return void
+     */
+    public function testItReturnsTheCorrectNullSystemDeviceForUnix()
+    {
+        /** @var Helper $helper */
+        $helper = $this->getMock("\\Jobby\\Helper", ["getPlatform"]);
+        $helper->expects($this->once())
+            ->method("getPlatform")
+            ->willReturn(Helper::UNIX);
+
+        $this->assertEquals("/dev/null", $helper->getSystemNullDevice());
+    }
+
+    /**
+     * @return void
+     */
+    public function testItReturnsTheCorrectNullSystemDeviceForWindows()
+    {
+        /** @var Helper $helper */
+        $helper = $this->getMock("\\Jobby\\Helper", ["getPlatform"]);
+        $helper->expects($this->once())
+               ->method("getPlatform")
+               ->willReturn(Helper::WINDOWS);
+
+        $this->assertEquals("NUL", $helper->getSystemNullDevice());
     }
 }
