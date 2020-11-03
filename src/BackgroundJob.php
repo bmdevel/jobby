@@ -2,8 +2,6 @@
 
 namespace Jobby;
 
-use Cron\CronExpression;
-
 class BackgroundJob
 {
     use SerializerTrait;

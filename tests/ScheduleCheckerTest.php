@@ -3,9 +3,9 @@
 namespace Jobby\Tests;
 
 use Jobby\ScheduleChecker;
-use PHPUnit_Framework_TestCase;
+use PHPUnit\Framework\TestCase;
 
-class ScheduleCheckerTest extends PHPUnit_Framework_TestCase
+class ScheduleCheckerTest extends TestCase
 {
     /**
      * @var ScheduleChecker
@@ -15,7 +15,7 @@ class ScheduleCheckerTest extends PHPUnit_Framework_TestCase
     /**
      * @return void
      */
-    protected function setUp()
+    protected function setUp(): void
     {
         parent::setUp();
 
