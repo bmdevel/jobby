@@ -4,12 +4,13 @@ namespace Jobby\Tests;
 
 use Jobby\Helper;
 use Jobby\Jobby;
+use PHPUnit\Framework\TestCase;
 use SuperClosure\SerializableClosure;
 
 /**
  * @coversDefaultClass Jobby\Jobby
  */
-class JobbyTest extends \PHPUnit_Framework_TestCase
+class JobbyTest extends TestCase
 {
     /**
      * @var string
@@ -24,20 +25,20 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
     /**
      * {@inheritdoc}
      */
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->logFile = __DIR__ . '/_files/JobbyTest.log';
         if (file_exists($this->logFile)) {
             unlink($this->logFile);
         }
-        
+
         $this->helper = new Helper();
     }
 
     /**
      * {@inheritdoc}
      */
-    protected function tearDown()
+    protected function tearDown(): void
     {
         if (file_exists($this->logFile)) {
             unlink($this->logFile);
@@ -87,9 +88,8 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
         // Job runs asynchronously, so wait a bit
         sleep($this->getSleepTime());
 
-        $this->assertFalse(
-            file_exists($this->logFile),
-            "Failed to assert that log file doesn't exist and that background process did not spawn"
+        $this->assertFileNotExists(
+            $this->logFile, "Failed to assert that log file doesn't exist and that background process did not spawn"
         );
     }
 
@@ -183,8 +183,8 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
         // Job runs asynchronously, so wait a bit
         sleep($this->getSleepTime());
 
-        $this->assertContains('job-1', $this->getLogContent());
-        $this->assertContains('job-2', $this->getLogContent());
+        $this->assertStringContainsString('job-1', $this->getLogContent());
+        $this->assertStringContainsString('job-2', $this->getLogContent());
     }
 
     /**
@@ -242,7 +242,7 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
         $jobby->setConfig(['dateFormat' => 'foo bar']);
         $newCfg = $jobby->getConfig();
 
-        $this->assertEquals(count($oldCfg), count($newCfg));
+        $this->assertSameSize($oldCfg, $newCfg);
         $this->assertEquals('foo bar', $newCfg['dateFormat']);
     }
 
@@ -252,35 +252,35 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
     public function testGetJobs()
     {
         $jobby = new Jobby();
-        $this->assertCount(0,$jobby->getJobs());
-        
+        $this->assertCount(0, $jobby->getJobs());
+
         $jobby->add(
             'test job1',
             [
-                'command' => 'test',
-                'schedule' => '* * * * *'
+                'command'  => 'test',
+                'schedule' => '* * * * *',
             ]
         );
 
         $jobby->add(
             'test job2',
             [
-                'command' => 'test',
-                'schedule' => '* * * * *'
+                'command'  => 'test',
+                'schedule' => '* * * * *',
             ]
         );
 
-        $this->assertCount(2,$jobby->getJobs());
+        $this->assertCount(2, $jobby->getJobs());
     }
 
     /**
      * @covers ::add
-     * @expectedException \Jobby\Exception
      */
     public function testExceptionOnMissingJobOptionCommand()
     {
-        $jobby = new Jobby();
+        $this->expectException(\Jobby\Exception::class);
 
+        $jobby = new Jobby();
         $jobby->add(
             'should fail',
             [
@@ -291,12 +291,13 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @covers ::add
-     * @expectedException \Jobby\Exception
+     *
      */
     public function testExceptionOnMissingJobOptionSchedule()
     {
-        $jobby = new Jobby();
+        $this->expectException(\Jobby\Exception::class);
 
+        $jobby = new Jobby();
         $jobby->add(
             'should fail',
             [
@@ -324,9 +325,9 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
             ]
         );
 
-        $timeStart = microtime();
+        $timeStart = microtime(true);
         $jobby->run();
-        $duration = microtime() - $timeStart;
+        $duration = microtime(true) - $timeStart;
 
         $this->assertLessThan(0.5, $duration);
     }
@@ -353,7 +354,7 @@ class JobbyTest extends \PHPUnit_Framework_TestCase
         $jobby->run();
         sleep(2);
 
-        $this->assertContains('ERROR: MaxRuntime of 1 secs exceeded!', $this->getLogContent());
+        $this->assertStringContainsString('ERROR: MaxRuntime of 1 secs exceeded!', $this->getLogContent());
     }
 
     /**

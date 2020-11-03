@@ -2,7 +2,10 @@
 
 namespace Jobby\Tests;
 
-class SerializerTraitTest extends \PHPUnit_Framework_TestCase
+use PHPUnit\Framework\TestCase;
+use SuperClosure\Serializer;
+
+class SerializerTraitTest extends TestCase
 {
     public function testGetSerializer()
     {
@@ -11,7 +14,7 @@ class SerializerTraitTest extends \PHPUnit_Framework_TestCase
         $method->setAccessible(true);
 
         $serializer = $method->invoke($mock);
-        $this->assertInstanceOf('\SuperClosure\Serializer', $serializer);
+        $this->assertInstanceOf(Serializer::class, $serializer);
 
         $serializer2 = $method->invoke($mock);
         $this->assertSame($serializer, $serializer2);

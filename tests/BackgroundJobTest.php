@@ -5,12 +5,13 @@ namespace Jobby\Tests;
 use Jobby\BackgroundJob;
 use Jobby\Helper;
 use Jobby\SerializerTrait;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * @coversDefaultClass Jobby\BackgroundJob
  */
-class BackgroundJobTest extends \PHPUnit_Framework_TestCase
+class BackgroundJobTest extends TestCase
 {
     use SerializerTrait;
 
@@ -29,7 +30,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     /**
      * {@inheritdoc}
      */
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->logFile = __DIR__ . '/_files/BackgroundJobTest.log';
         if (file_exists($this->logFile)) {
@@ -42,7 +43,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     /**
      * {@inheritdoc}
      */
-    protected function tearDown()
+    protected function tearDown(): void
     {
         if (file_exists($this->logFile)) {
             unlink($this->logFile);
@@ -64,10 +65,10 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
         $job = ['closure' => $echo];
 
         return [
-            'diabled, not run'       => [$job + ['enabled' => false], ''],
-            'normal job, run'         => [$job, 'test'],
-            'wrong host, not run'    => [$job + ['runOnHost' => 'something that does not match'], ''],
-            'current user, run,'     => [['closure' => $uid], getmyuid()],
+            'diabled, not run'    => [$job + ['enabled' => false], ''],
+            'normal job, run'     => [$job, 'test'],
+            'wrong host, not run' => [$job + ['runOnHost' => 'something that does not match'], ''],
+            'current user, run,'  => [['closure' => $uid], getmyuid()],
         ];
     }
 
@@ -76,8 +77,8 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetConfig()
     {
-        $job = new BackgroundJob('test job',[]);
-        $this->assertInternalType('array',$job->getConfig());
+        $job = new BackgroundJob('test job', []);
+        $this->assertIsArray($job->getConfig());
     }
 
     /**
@@ -85,7 +86,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      *
      * @covers ::run
      *
-     * @param array  $config
+     * @param array $config
      * @param string $expectedOutput
      */
     public function testRun($config, $expectedOutput)
@@ -102,16 +103,16 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     {
         $this->runJob(['command' => 'invalid-command']);
 
-        $this->assertContains('invalid-command', $this->getLogContent());
+        $this->assertStringContainsString('invalid-command', $this->getLogContent());
 
         if ($this->helper->getPlatform() === Helper::UNIX) {
-            $this->assertContains('not found', $this->getLogContent());
-            $this->assertContains(
+            $this->assertStringContainsString('not found', $this->getLogContent());
+            $this->assertStringContainsString(
                 "ERROR: Job exited with status '127'",
                 $this->getLogContent()
             );
         } else {
-            $this->assertContains(
+            $this->assertStringContainsString(
                 'not recognized as an internal or external command',
                 $this->getLogContent()
             );
@@ -131,7 +132,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
             ]
         );
 
-        $this->assertContains(
+        $this->assertStringContainsString(
             'ERROR: Closure did not return true! Returned:',
             $this->getLogContent()
         );
@@ -187,10 +188,10 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      */
     public function testNotSendMailOnMissingRecipients()
     {
-        $helper = $this->getMock('Jobby\Helper', ['sendMail']);
-        $helper->expects($this->never())
-            ->method('sendMail')
-        ;
+        $helper = $this->createMock(Helper::class);
+        $helper
+            ->expects($this->never())
+            ->method('sendMail');
 
         $this->runJob(
             [
@@ -208,10 +209,10 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
      */
     public function testMailShouldTriggerHelper()
     {
-        $helper = $this->getMock('Jobby\Helper', ['sendMail']);
-        $helper->expects($this->once())
-            ->method('sendMail')
-        ;
+        $helper = $this->createPartialMock(Helper::class, ['sendMail']);
+        $helper
+            ->expects($this->once())
+            ->method('sendMail');
 
         $this->runJob(
             [
@@ -233,11 +234,11 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
             $this->markTestSkipped("'maxRuntime' is not supported on Windows");
         }
 
-        $helper = $this->getMock('Jobby\Helper', ['getLockLifetime']);
-        $helper->expects($this->once())
+        $helper = $this->createMock(Helper::class);
+        $helper
+            ->expects($this->once())
             ->method('getLockLifetime')
-            ->will($this->returnValue(0))
-        ;
+            ->willReturn(0);
 
         $this->runJob(
             [
@@ -259,11 +260,11 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
             $this->markTestSkipped("'maxRuntime' is not supported on Windows");
         }
 
-        $helper = $this->getMock('Jobby\Helper', ['getLockLifetime']);
-        $helper->expects($this->once())
+        $helper = $this->createMock(Helper::class);
+        $helper
+            ->expects($this->once())
             ->method('getLockLifetime')
-            ->will($this->returnValue(2))
-        ;
+            ->will($this->returnValue(2));
 
         $this->runJob(
             [
@@ -273,7 +274,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
             $helper
         );
 
-        $this->assertContains(
+        $this->assertStringContainsString(
             'MaxRuntime of 1 secs exceeded! Current runtime: 2 secs',
             $this->getLogContent()
         );
@@ -325,7 +326,7 @@ class BackgroundJobTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @param array  $config
+     * @param array $config
      * @param Helper $helper
      */
     private function runJob(array $config, Helper $helper = null)
